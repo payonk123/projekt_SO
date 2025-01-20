@@ -140,8 +140,8 @@ void passenger_process() {
     exit(EXIT_SUCCESS);
 }
 
-void spawn_passengers(int num_passengers) {
-    for (int i = 0; i < num_passengers; i++) {
+void spawn_passengers() {
+    while (1) {
         pid_t pid = fork();
         if (pid == 0) {
             // Child process: Passenger
@@ -150,19 +150,14 @@ void spawn_passengers(int num_passengers) {
             perror("Failed to fork passenger process");
             exit(EXIT_FAILURE);
         }
-        usleep(500000); // Add a small delay between passenger creations
+        usleep((rand()%10 + 1)*1000000); // spawn passengers in random time intervals
     }
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <num_passengers>\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    int num_passengers = atoi(argv[1]);
-    printf("Passenger process manager started. Spawning %d passengers...\n", num_passengers);
-    spawn_passengers(num_passengers);
+    
+    printf("Passenger process manager started. Spawning passengers...\n");
+    spawn_passengers();
 
     return 0;
 }
