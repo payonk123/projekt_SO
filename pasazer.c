@@ -110,7 +110,7 @@ void passenger_process() {
         exit(EXIT_FAILURE);
     }}
 
-    if(ticket.assigned_boat==1 && pass.discount50 == 1){
+    if(ticket.assigned_boat==1 && pass.discount50 == 1){ //go == 3 ?
     if (msgsnd(boat1_priority_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
         perror("Failed to send passenger details");
         exit(EXIT_FAILURE);
@@ -122,7 +122,7 @@ void passenger_process() {
         exit(EXIT_FAILURE);
     }}
 
-    if(ticket.assigned_boat==2 && pass.discount50 == 1){
+    if(ticket.assigned_boat==2 && pass.discount50 == 1){ //go == 3 ?
     if (msgsnd(boat2_priority_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
         perror("Failed to send passenger details");
         exit(EXIT_FAILURE);
@@ -150,7 +150,7 @@ void spawn_passengers() {
             perror("Failed to fork passenger process");
             exit(EXIT_FAILURE);
         }
-        usleep((rand()%10 + 1)*1000000); // spawn passengers in random time intervals
+        usleep((rand()%10 + 1)*500000); // spawn passengers in random time intervals
     }
 }
 
