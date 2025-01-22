@@ -32,6 +32,10 @@
 #define RETURNING_QUEUE_2_KEY 8888
 
 
+//zmienna globalna 'sail' gdy sygnal to sail = 0
+int sail = 1;
+int nr;
+
 // Define the passenger structure
 struct passenger {
     long int mtype; // Message type
@@ -47,7 +51,22 @@ struct ticket {
     int price; //if pass.another = 0 20 if pass.another = 1 10
 };
 
-void captain_process(int nr) {
+// Obsługa sygnałów policjanta
+void handle_signal(int signal) {
+    if (signal == SIGUSR1 && nr == 1) {
+        printf("Boat 1 stops sailing if possible\n");
+        sail = 0;
+    }
+    else if (signal == SIGUSR2 && nr == 2){
+        printf("Boat 2 stops sailing if possible\n");
+        sail = 0;
+    }
+    else
+        perror("Failed to handle signal");
+}
+
+
+void captain_process() {
     int boat_priority_msgid, boat_msgid, bridge_msgid, barriers, returning_msgid, flag, boat_queue;
     struct passenger pass;
 
@@ -123,7 +142,7 @@ void captain_process(int nr) {
     }
     //while dla rejsu
 
-    while (1) { //pętla rejsu - zaladunek i rozladunek odbywaja sie w petli
+    while (sail) { //pętla rejsu - zaladunek i rozladunek odbywaja sie w petli
 
         if (semctl(barriers, 0, SETVAL, K) == -1) { //for now K = 5
             perror("Failed to set first barrier");
@@ -134,10 +153,7 @@ void captain_process(int nr) {
             exit(EXIT_FAILURE);
         }
 
-        //semafor jest tworzony i podnoszony
-
-        while (1) { //when no signal from police - else get everyone out and kill them
-            // semctl should i read another (how many on brigde + on boat)
+        while (sail) { //when no signal from police - else get everyone out and kill them
 
             int num = semctl(barriers, 0, GETVAL);
             if (num == -1) {
@@ -224,13 +240,15 @@ void captain_process(int nr) {
             exit(EXIT_FAILURE);
         }
 
-        sleep(1);
-        printf("\n\nBoat %d is sailing...\n\n", nr);
-        sleep(T);
-        printf("\n\nBoat %d returned :) now passengers get out ;v;\n\n", nr);
+        if (sail){
+            sleep(1);
+            printf("\n\nBoat %d is sailing...\n\n", nr);
+            sleep(T);
+            printf("\n\nBoat %d returned :) now passengers get out ;v;\n\n", nr);
+        }
 
-        while (1) { //when no signal from police - else get everyone out and kill them
-            // semctl should i read another (how many on brigde + on boat)
+        while (1) { //rozladunek odbedzie sie niewazne co wiec 1 a nie sail
+            
 
             int num = semctl(barriers, 0, GETVAL);
             if (num == -1) {
@@ -290,7 +308,6 @@ void captain_process(int nr) {
                 exit(EXIT_FAILURE);
             }
 
-
         }
 
             struct sembuf opening3 = {0, -1, 0};
@@ -300,15 +317,26 @@ void captain_process(int nr) {
             }
 
     }
+
+    printf("Boat %d definitely ended sailing for today\n", nr);
+    //kill all passengers when signal from police received
+    //zniszczenie wszystkich kolejek i semaforow w sterniku
+    //zabicie sternika (bo zakonczy się funckja)
 }
 
 int main() {
     printf("Captain process started.\n");
+
+    signal(SIGUSR1, handle_signal);
+    signal(SIGUSR2, handle_signal);
+
     pid_t pid = fork();
     if (pid == 0) {
         // Child process: captain of boat 1
+        nr = 1;
         captain_process(1);
     } else if (pid > 0) {
+        nr = 2;
         captain_process(2);
     } else if (pid < 0) {
         perror("Failed to fork passenger process");
