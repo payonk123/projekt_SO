@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdbool.h>
+#include <sys/sem.h>
 
 // Define the passenger structure
 struct passenger {
@@ -29,11 +30,15 @@ struct ticket {
 #define MOLO_QUEUE_1_KEY 2222
 #define MOLO_QUEUE_P2_KEY 3333
 #define MOLO_QUEUE_2_KEY 4444
+#define RETURNING_QUEUE_1_KEY 7777
+#define RETURNING_QUEUE_2_KEY 8888
 
 void passenger_process() {
     int passenger_msgid; //queue of passengers that want to get a ticket
     int cashier_msgid;
-    int boat1_priority_msgid, boat1_msgid, boat2_priority_msgid, boat2_msgid;
+    int boat1_priority_msgid, boat1_msgid, boat2_priority_msgid, boat2_msgid, flag;
+    int returning1_msgid;
+    int returning2_msgid;
     struct passenger pass;
     struct ticket ticket;
 
@@ -80,12 +85,23 @@ void passenger_process() {
         exit(EXIT_FAILURE);
     }
 
+    returning1_msgid = msgget(RETURNING_QUEUE_1_KEY, 0666);
+    if (returning1_msgid == -1) {
+        perror("Failed to create queue");
+        exit(EXIT_FAILURE);
+    }
+    returning2_msgid = msgget(RETURNING_QUEUE_2_KEY, 0666);
+    if (returning2_msgid == -1) {
+        perror("Failed to create queue");
+        exit(EXIT_FAILURE);
+    }
+
     // Fill passenger data
-    pass.mtype = 1; // Arbitrary type for passenger messages
+    //pass.mtype = 1; // Arbitrary type for passenger messages
     pass.pid_p = getpid();
+    pass.mtype = pass.pid_p;
     pass.age = age;
     pass.discount50 = 0;
-
     int go = 0;
 
     do {
@@ -127,14 +143,52 @@ void passenger_process() {
         perror("Failed to send passenger details");
         exit(EXIT_FAILURE);
     }}
+
+    flag = semget(10+ticket.assigned_boat, 1, 0600 | IPC_CREAT);
+    if (flag == -1) {
+        perror("Failed to create barriers");
+        exit(EXIT_FAILURE);
+    }
+
+    struct passenger ghost;
+
+    if(ticket.assigned_boat==1){
+        if (msgrcv(returning1_msgid, &ghost, sizeof(pass) - sizeof(long int), pass.pid_p, 0) == -1) {
+            perror("Failed to receive ticket");
+            exit(EXIT_FAILURE);
+        }
+        else{
+            printf("\nPasazer %d dostal rozkaz wyjscia\n", getpid());
+        }
+    }
+
+    else if(ticket.assigned_boat==2){
+        if (msgrcv(returning2_msgid, &ghost, sizeof(pass) - sizeof(long int), pass.pid_p, 0) == -1) {
+            perror("Failed to receive ticket");
+            exit(EXIT_FAILURE);
+        }
+        else{
+            printf("\nPasazer %d dostal rozkaz wyjscia\n", getpid());
+        }
+    }
     
+    while(1){
+        int num = semctl(flag, 0, GETVAL);
+            if (num == -1) {
+                perror("Semaphore read error");
+                exit(EXIT_FAILURE);
+            }
+        if(num==0)
+            break;
+    }
 
-    //podroz lodka w wspolpracy juz ze sternikiem 
+    printf("Pasazer %d zakonczyl rejs!\n", pass.pid_p);
 
-    go = rand() % 4;
-    if(go == 3)
+    //go = rand() % 4;
+    go = 1;
+    if(go == 1)
     printf("ja chce jeszcze raz! (jestem %d)\n", pass.pid_p);
-    } while(go == 3);
+    } while(go == 1);
 
 
     exit(EXIT_SUCCESS);
@@ -150,7 +204,8 @@ void spawn_passengers() {
             perror("Failed to fork passenger process");
             exit(EXIT_FAILURE);
         }
-        usleep((rand()%10 + 1)*500000); // spawn passengers in random time intervals
+        //usleep((rand()%10 + 1)*750000); // spawn passengers in random time intervals
+        sleep(5);
     }
 }
 

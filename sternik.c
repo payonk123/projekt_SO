@@ -18,14 +18,19 @@
 #define MOLO_QUEUE_P2_KEY 3333
 #define MOLO_QUEUE_2_KEY 4444
 
-#define N1 15
-#define N2 20
-#define T1 10
-#define T2 15
-#define K 5
+#define N1 3
+#define N2 3
+#define T1 5
+#define T2 6
+#define K 1
 
 #define BRIDGE_QUEUE_1_KEY 5555
 #define BRIDGE_QUEUE_2_KEY 6666
+#define BOAT_QUEUE_1_KEY 1212
+#define BOAT_QUEUE_2_KEY 3434
+#define RETURNING_QUEUE_1_KEY 7777
+#define RETURNING_QUEUE_2_KEY 8888
+
 
 // Define the passenger structure
 struct passenger {
@@ -43,12 +48,14 @@ struct ticket {
 };
 
 void captain_process(int nr) {
-    int boat_priority_msgid, boat_msgid, bridge_msgid, barriers;
+    int boat_priority_msgid, boat_msgid, bridge_msgid, barriers, returning_msgid, flag, boat_queue;
     struct passenger pass;
 
     int key_MQ;
     int key_MPQ;
     int key_BQ;
+    int key_RQ;
+    int key_BOATQ;
     int N;
     int T;
 
@@ -56,6 +63,8 @@ void captain_process(int nr) {
         key_MQ = MOLO_QUEUE_1_KEY;
         key_MPQ = MOLO_QUEUE_P1_KEY;
         key_BQ = BRIDGE_QUEUE_1_KEY;
+        key_RQ = RETURNING_QUEUE_1_KEY;
+        key_BOATQ = BOAT_QUEUE_1_KEY;    
         N = N1;
         T = T1; 
     }
@@ -63,6 +72,8 @@ void captain_process(int nr) {
         key_MQ = MOLO_QUEUE_2_KEY;
         key_MPQ = MOLO_QUEUE_P2_KEY;
         key_BQ = BRIDGE_QUEUE_2_KEY;
+        key_RQ = RETURNING_QUEUE_2_KEY;
+        key_BOATQ = BOAT_QUEUE_2_KEY; 
         N = N2;
         T = T2; 
     };
@@ -87,12 +98,29 @@ void captain_process(int nr) {
         exit(EXIT_FAILURE);
     }
 
+    returning_msgid = msgget(key_RQ, IPC_CREAT | 0666);
+    if (returning_msgid == -1) {
+        perror("Failed to create queue");
+        exit(EXIT_FAILURE);
+    }
+
+    boat_queue = msgget(key_BOATQ, IPC_CREAT | 0666);
+    if (boat_queue == -1) {
+        perror("Failed to create queue");
+        exit(EXIT_FAILURE);
+    }
+
     barriers = semget(123+nr, 2, 0600 | IPC_CREAT);
     if (barriers == -1) {
         perror("Failed to create barriers");
         exit(EXIT_FAILURE);
     }
 
+    flag = semget(10+nr, 1, 0600 | IPC_CREAT);
+    if (flag == -1) {
+        perror("Failed to create barriers");
+        exit(EXIT_FAILURE);
+    }
     //while dla rejsu
 
     while (1) { //pętla rejsu - zaladunek i rozladunek odbywaja sie w petli
@@ -105,6 +133,8 @@ void captain_process(int nr) {
             perror("Failed to set second barrier");
             exit(EXIT_FAILURE);
         }
+
+        //semafor jest tworzony i podnoszony
 
         while (1) { //when no signal from police - else get everyone out and kill them
             // semctl should i read another (how many on brigde + on boat)
@@ -124,6 +154,8 @@ void captain_process(int nr) {
                 break;
 
             bool passengerSpotted = false;
+
+            struct passenger pass;
 
             if (msgrcv(boat_priority_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
                 if (errno == ENOMSG) {
@@ -151,12 +183,12 @@ void captain_process(int nr) {
                 exit(EXIT_FAILURE);
             }
 
-            if (msgsnd(bridge_msgid, & pass, sizeof(pass) - sizeof(long int), 0) == -1) {
+            if (msgsnd(bridge_msgid, &pass, sizeof(&pass) - sizeof(long int), 0) == -1) {
                 perror("Failed to get passenger on the brigde");
                 exit(EXIT_FAILURE);
             }
 
-            if (msgrcv(bridge_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
+            if (msgrcv(bridge_msgid, & pass, sizeof(&pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
                 if (errno == ENOMSG) {
                     //printf("No messages in boat1_priority_msgid.\n");
                 } else {
@@ -164,13 +196,13 @@ void captain_process(int nr) {
                     exit(EXIT_FAILURE);
                 }
             } else
-                printf("\n\nPassenger got on brigde %d safely %d places left\n\n", nr, num + num2 - K);
+                printf("\n\nPassenger %d got on brigde %d safely %d places left\n\n",pass.pid_p, nr, num + num2 - K);
 
-            // now get off of the bridge to the boat
+
 
             struct sembuf closing0 = {0, 1, 0};
             if (semop(barriers, & closing0, 1) == -1) {
-                perror("Cannot get to the brigde! \n");
+                perror("Cannot get off brigde! \n");
                 exit(EXIT_FAILURE);
             }
 
@@ -179,7 +211,17 @@ void captain_process(int nr) {
                 perror("Cannot get to the boat! \n");
                 exit(EXIT_FAILURE);
             }
+            if (msgsnd(boat_queue, &pass, sizeof(&pass) - sizeof(long int), 0) == -1) {
+                perror("Failed to send passenger that enters the boat");
+                exit(EXIT_FAILURE);
+            }
 
+
+        }
+
+        if (semctl(flag, 0, SETVAL, 1) == -1) { 
+            perror("Failed to set a flag");
+            exit(EXIT_FAILURE);
         }
 
         sleep(1);
@@ -201,8 +243,8 @@ void captain_process(int nr) {
                 exit(EXIT_FAILURE);
             }
 
-            if (num + num2 == 20) {
-                printf("Each passenger left the boat and the brigde %d", nr);
+            if (num + num2 == N+K) {
+                printf("Each passenger left the boat and the brigde %d\n", nr);
                 break;
             } //as long as there are still some passengers...
             struct sembuf leaving1 = {1, 1, 0};
@@ -211,35 +253,52 @@ void captain_process(int nr) {
                 exit(EXIT_FAILURE);
             }
 
-            if (msgsnd(bridge_msgid, & pass, sizeof(pass) - sizeof(long int), 0) == -1) {
+            if (msgrcv(boat_queue, &pass, sizeof(&pass) - sizeof(long int), 0, 0) == -1) {
+                perror("Failed to redirect passenger from boat");
+                exit(EXIT_FAILURE);
+            }
+
+            if (msgsnd(bridge_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
                 perror("Failed to get passenger on the brigde");
                 exit(EXIT_FAILURE);
             }
 
-            if (msgrcv(bridge_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
-                if (errno == ENOMSG) {
-                    //printf("No messages in boat1_priority_msgid.\n");
-                } else {
-                    perror("msgrcv failed");
-                    exit(EXIT_FAILURE);
-                }
-            } else
-                printf("\n\nPassenger got off the brigde %d safely %d have to get out\n\n",nr, (N+K) - (num + num2));
+
+            if (msgrcv(bridge_msgid, &pass, sizeof(pass) - sizeof(long int), 0, 0) == -1) {
+                perror("msgrcv failed");
+                exit(EXIT_FAILURE);
+            }
+                
+            printf("\n\nPassenger got off the brigde %d safely %d have to get out\n\n", nr, (N+K) - (num + num2));
             sleep(1);
-            // now get off of the bridge to the boat
 
             struct sembuf entering0 = {0, -1, 0};
             if (semop(barriers, & entering0, 1) == -1) {
-                perror("Cannot get to the brigde! \n");
+                perror("Cannot get on the barrier! \n");
                 exit(EXIT_FAILURE);
             }
 
+
             struct sembuf leaving0 = {0, 1, 0};
             if (semop(barriers, & leaving0, 1) == -1) {
-                perror("Cannot get to the boat! \n");
+                perror("Cannot get on land\n");
                 exit(EXIT_FAILURE);
             }
+
+            if (msgsnd(returning_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
+                perror("Failed to get passenger on the brigde");
+                exit(EXIT_FAILURE);
+            }
+
+
         }
+
+            struct sembuf opening3 = {0, -1, 0};
+            if (semop(flag, &opening3, 1) == -1) {
+                perror("Cannot diminish semaphore \n");
+                exit(EXIT_FAILURE);
+            }
+
     }
 }
 
