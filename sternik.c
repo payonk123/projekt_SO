@@ -31,6 +31,7 @@
 #define RETURNING_QUEUE_1_KEY 7777
 #define RETURNING_QUEUE_2_KEY 8888
 
+#define CAPTAIN_QUEUE_KEY 1313
 
 //zmienna globalna 'sail' gdy sygnal to sail = 0
 int sail = 1;
@@ -51,6 +52,12 @@ struct ticket {
     int price; //if pass.another = 0 20 if pass.another = 1 10
 };
 
+struct captain {
+    long int mtype;
+    pid_t pid_c;
+    int which_c; //1 or 2
+};
+
 // Obsługa sygnałów policjanta
 void handle_signal(int signal) {
     if (signal == SIGUSR1 && nr == 1) {
@@ -67,8 +74,27 @@ void handle_signal(int signal) {
 
 
 void captain_process() {
-    int boat_priority_msgid, boat_msgid, bridge_msgid, barriers, returning_msgid, flag, boat_queue;
+    int boat_priority_msgid, boat_msgid, bridge_msgid, barriers, returning_msgid, flag, boat_queue, captain_msgid;
     struct passenger pass;
+    struct captain captain;
+
+    captain.mtype = 1;
+    captain.pid_c = getpid();
+    captain.which_c = nr;
+
+    captain_msgid = msgget(CAPTAIN_QUEUE_KEY, 0666);
+    if (captain_msgid == -1) {
+        perror("Failed to create queue POLCAP");
+        exit(EXIT_FAILURE);
+    }
+
+    if (msgsnd(captain_msgid, &captain, sizeof(captain) - sizeof(long int), 0) == -1) {
+        perror("Failed to send captain's pid");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("wyslalem %d\n\n", captain.pid_c);
+
 
     int key_MQ;
     int key_MPQ;
@@ -199,12 +225,12 @@ void captain_process() {
                 exit(EXIT_FAILURE);
             }
 
-            if (msgsnd(bridge_msgid, &pass, sizeof(&pass) - sizeof(long int), 0) == -1) {
+            if (msgsnd(bridge_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
                 perror("Failed to get passenger on the brigde");
                 exit(EXIT_FAILURE);
             }
 
-            if (msgrcv(bridge_msgid, & pass, sizeof(&pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
+            if (msgrcv(bridge_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
                 if (errno == ENOMSG) {
                     //printf("No messages in boat1_priority_msgid.\n");
                 } else {
@@ -227,7 +253,7 @@ void captain_process() {
                 perror("Cannot get to the boat! \n");
                 exit(EXIT_FAILURE);
             }
-            if (msgsnd(boat_queue, &pass, sizeof(&pass) - sizeof(long int), 0) == -1) {
+            if (msgsnd(boat_queue, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
                 perror("Failed to send passenger that enters the boat");
                 exit(EXIT_FAILURE);
             }
@@ -266,12 +292,12 @@ void captain_process() {
                 break;
             } //as long as there are still some passengers...
             struct sembuf leaving1 = {1, 1, 0};
-            if (semop(barriers, & leaving1, 1) == -1) {
+            if (semop(barriers, &leaving1, 1) == -1) {
                 perror("Cannot get to the brigde! \n");
                 exit(EXIT_FAILURE);
             }
 
-            if (msgrcv(boat_queue, &pass, sizeof(&pass) - sizeof(long int), 0, 0) == -1) {
+            if (msgrcv(boat_queue, &pass, sizeof(pass) - sizeof(long int), 0, 0) == -1) {
                 perror("Failed to redirect passenger from boat");
                 exit(EXIT_FAILURE);
             }
@@ -303,6 +329,8 @@ void captain_process() {
                 exit(EXIT_FAILURE);
             }
 
+            printf("Nadalem rozkaz wyjscia pasazerowi %d\n", pass.pid_p);
+
             if (msgsnd(returning_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
                 perror("Failed to get passenger on the brigde");
                 exit(EXIT_FAILURE);
@@ -321,7 +349,7 @@ void captain_process() {
     printf("Boat %d definitely ended sailing for today\n", nr);
     //kill all passengers when signal from police received
     //zniszczenie wszystkich kolejek i semaforow w sterniku
-    //zabicie sternika (bo zakonczy się funckja)
+    exit(1);
 }
 
 int main() {

@@ -6,6 +6,12 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdbool.h>
+#include <signal.h>
+
+void handle_signal(int signal) {
+  printf("Cashier process ends\n");
+  exit(1);
+}
 
 // Define the passenger structure
 struct passenger {
@@ -22,9 +28,15 @@ struct ticket {
     int price; //if pass.another = 0 20 if pass.another = 1 10
 };
 
+struct cashier {
+    long int mtype; 
+    pid_t pid;
+};
+
 // Define message queue keys
 #define PASSENGER_QUEUE_KEY 1234
 #define CASHIER_QUEUE_KEY 5678
+#define CASHIER_EX_QUEUE_KEY 1919
 
 void cashier_process() {
     int passenger_msgid, cashier_msgid;
@@ -79,7 +91,27 @@ void cashier_process() {
 }
 
 int main() {
+
+    signal(SIGINT, handle_signal);
+
     srand(time(NULL)); // Initialize random number generator
+    struct cashier cashier;
+    cashier.mtype=1;
+    cashier.pid=getpid();
+
+    int cashier_ex_msgid;
+
+    cashier_ex_msgid = msgget(CASHIER_EX_QUEUE_KEY, 0666);
+    if (cashier_ex_msgid == -1) {
+        perror("Failed to create queue POLPASS");
+        exit(EXIT_FAILURE);
+    }
+
+    if (msgsnd(cashier_ex_msgid, &cashier, sizeof(cashier) - sizeof(long int), 0) == -1) {
+        perror("Failed to send parent's pid");
+        exit(EXIT_FAILURE);
+    }
+
     printf("Cashier process started.\n");
     cashier_process();
     return 0;

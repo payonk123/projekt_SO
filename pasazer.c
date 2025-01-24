@@ -7,6 +7,12 @@
 #include <time.h>
 #include <stdbool.h>
 #include <sys/sem.h>
+#include <signal.h>
+
+void handle_signal(int signal) {
+  printf("All passengers end\n");
+  exit(1);
+}
 
 // Define the passenger structure
 struct passenger {
@@ -22,9 +28,16 @@ struct ticket {
     int assigned_boat; // Assigned boat number (1 or 2)
 };
 
+struct parent_of_all{
+    long int mtype;
+    pid_t pid;
+};
+
 // Define message queue keys
 #define PASSENGER_QUEUE_KEY 1234
 #define CASHIER_QUEUE_KEY 5678
+
+#define PASS_EX_QUEUE_KEY 1616
 
 #define MOLO_QUEUE_P1_KEY 1111
 #define MOLO_QUEUE_1_KEY 2222
@@ -184,11 +197,10 @@ void passenger_process() {
 
     printf("Pasazer %d zakonczyl rejs!\n", pass.pid_p);
 
-    //go = rand() % 4;
-    go = 1;
-    if(go == 1)
+    go = rand() % 4;
+    if(go == 3)
     printf("ja chce jeszcze raz! (jestem %d)\n", pass.pid_p);
-    } while(go == 1);
+    } while(go == 3);
 
 
     exit(EXIT_SUCCESS);
@@ -210,8 +222,29 @@ void spawn_passengers() {
 }
 
 int main(int argc, char *argv[]) {
+
+    signal(SIGINT, handle_signal);
+
+    struct parent_of_all parent;
+
+    parent.mtype=1;
+    parent.pid=getpid();
+
+    int pass_ex_msgid;
+
+    pass_ex_msgid = msgget(PASS_EX_QUEUE_KEY, 0666);
+    if (pass_ex_msgid == -1) {
+        perror("Failed to create queue POLPASS");
+        exit(EXIT_FAILURE);
+    }
+
+    if (msgsnd(pass_ex_msgid, &parent, sizeof(parent) - sizeof(long int), 0) == -1) {
+        perror("Failed to send parent's pid");
+        exit(EXIT_FAILURE);
+    }
     
     printf("Passenger process manager started. Spawning passengers...\n");
+
     spawn_passengers();
 
     return 0;
