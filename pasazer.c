@@ -10,7 +10,8 @@
 #include <signal.h>
 
 void handle_signal(int signal) {
-  printf("All passengers end\n");
+  printf("Passenger ends.\n");
+  kill(0, SIGINT);
   exit(1);
 }
 

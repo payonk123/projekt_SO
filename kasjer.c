@@ -8,8 +8,13 @@
 #include <stdbool.h>
 #include <signal.h>
 
+int passenger_msgid, cashier_msgid;
+
 void handle_signal(int signal) {
   printf("Cashier process ends\n");
+
+  msgctl(passenger_msgid, IPC_RMID, NULL);
+  msgctl(cashier_msgid, IPC_RMID, NULL);
   exit(1);
 }
 
@@ -39,7 +44,7 @@ struct cashier {
 #define CASHIER_EX_QUEUE_KEY 1919
 
 void cashier_process() {
-    int passenger_msgid, cashier_msgid;
+
     struct passenger pass;
     struct ticket ticket;
 

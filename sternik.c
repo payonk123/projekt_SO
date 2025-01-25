@@ -19,10 +19,10 @@
 #define MOLO_QUEUE_2_KEY 4444
 
 #define N1 3
-#define N2 3
+#define N2 2
 #define T1 5
 #define T2 6
-#define K 1
+#define K 4
 
 #define BRIDGE_QUEUE_1_KEY 5555
 #define BRIDGE_QUEUE_2_KEY 6666
@@ -348,11 +348,24 @@ void captain_process() {
 
     printf("Boat %d definitely ended sailing for today\n", nr);
     //kill all passengers when signal from police received
-    //zniszczenie wszystkich kolejek i semaforow w sterniku
+    semctl(barriers, 2, IPC_RMID);
+    semctl(flag, 1, IPC_RMID);
+
+    msgctl(boat_priority_msgid, IPC_RMID, NULL);
+    msgctl(boat_msgid, IPC_RMID, NULL);
+    msgctl(bridge_msgid, IPC_RMID, NULL);
+    msgctl(returning_msgid, IPC_RMID, NULL);
+    msgctl(boat_queue, IPC_RMID, NULL);
+
     exit(1);
 }
 
 int main() {
+
+    if(N1<K || N2<K){
+        printf("Condition K<N not met - captain process ends\n");
+        exit(EXIT_FAILURE);
+    }
     printf("Captain process started.\n");
 
     signal(SIGUSR1, handle_signal);

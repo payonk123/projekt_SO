@@ -22,7 +22,7 @@
 #define PASS_EX_QUEUE_KEY 1616
 #define CASHIER_EX_QUEUE_KEY 1919
 
-#define Tk 45
+#define Tk 30
 
 struct captain {
     long int mtype;
@@ -121,6 +121,11 @@ int main(){
         perror("Failed to send signal killing passangers");
         exit(EXIT_FAILURE);
     }
+
+    msgctl(cashier_ex_msgid, IPC_RMID, NULL);
+    msgctl(pass_ex_msgid, IPC_RMID, NULL);
+    msgctl(captain_msgid, IPC_RMID, NULL);
+
 
     exit(1);
 }
