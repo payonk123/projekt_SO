@@ -13,16 +13,18 @@
 #include <fcntl.h>
 #include <stdbool.h>
 
+
+
 #define MOLO_QUEUE_P1_KEY 1111
 #define MOLO_QUEUE_1_KEY 2222
 #define MOLO_QUEUE_P2_KEY 3333
 #define MOLO_QUEUE_2_KEY 4444
 
 #define N1 3
-#define N2 2
+#define N2 3
 #define T1 5
 #define T2 6
-#define K 4
+#define K 2
 
 #define BRIDGE_QUEUE_1_KEY 5555
 #define BRIDGE_QUEUE_2_KEY 6666
@@ -30,6 +32,8 @@
 #define BOAT_QUEUE_2_KEY 3434
 #define RETURNING_QUEUE_1_KEY 7777
 #define RETURNING_QUEUE_2_KEY 8888
+
+#define CHILD_QUEUE_KEY 9999
 
 #define CAPTAIN_QUEUE_KEY 1313
 
@@ -40,11 +44,11 @@ int nr;
 // Define the passenger structure
 struct passenger {
     long int mtype; // Message type
-    pid_t pid_p; // Process ID of the passenger
-    int age; // Age of the passenger
-    bool discount50;
+    pid_t pid_p;    // Process ID of the passenger
+    int age;        // Age of the passenger
+    bool discount50;   // czy uprawniony do znizki - gdy jechal tak gdy pierwszy raz to nir
+    int child_age;
 };
-
 // Define the ticket structure
 struct ticket {
     long int mtype; // Message type
@@ -74,7 +78,7 @@ void handle_signal(int signal) {
 
 
 void captain_process() {
-    int boat_priority_msgid, boat_msgid, bridge_msgid, barriers, returning_msgid, flag, boat_queue, captain_msgid;
+    int boat_priority_msgid, boat_msgid, bridge_msgid, barriers, returning_msgid, flag, boat_queue, captain_msgid, child_msgid;
     struct passenger pass;
     struct captain captain;
 
@@ -155,6 +159,12 @@ void captain_process() {
         exit(EXIT_FAILURE);
     }
 
+    child_msgid = msgget(CHILD_QUEUE_KEY, IPC_CREAT | 0666);
+    if (child_msgid == -1) {
+        perror("Failed to create queue");
+        exit(EXIT_FAILURE);
+    }
+
     barriers = semget(123+nr, 2, 0600 | IPC_CREAT);
     if (barriers == -1) {
         perror("Failed to create barriers");
@@ -169,6 +179,7 @@ void captain_process() {
     //while dla rejsu
 
     while (sail) { //pętla rejsu - zaladunek i rozladunek odbywaja sie w petli
+        int decNo;
 
         if (semctl(barriers, 0, SETVAL, K) == -1) { //for now K = 5
             perror("Failed to set first barrier");
@@ -198,8 +209,20 @@ void captain_process() {
             bool passengerSpotted = false;
 
             struct passenger pass;
+            //nowy priorytet - child_queue, sciagnij z child _queue TYLKO gdy jest miejsce na dwoch pass
+            //jesli nie ma miejsca na dwa lub child_queue puste to:
+            if(nr == 2 && num + num2 > K+1){
+                if(msgrcv(child_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1){
+                    if (errno != ENOMSG){
+                        perror("msgrcv failed");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+                else
+                    passengerSpotted = true;
+            }
 
-            if (msgrcv(boat_priority_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
+            if (!passengerSpotted && msgrcv(boat_priority_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
                 if (errno == ENOMSG) {
                     if (msgrcv(boat_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
                         if (errno == ENOMSG) {
@@ -219,9 +242,29 @@ void captain_process() {
 
             printf("I am c%d and see %d on molo\n", nr, pass.pid_p);
             sleep(1);
-            struct sembuf opening0 = {0, -1, 0};
-            if (semop(barriers, & opening0, 1) == -1) {
-                perror("Cannot get to the brigde! \n");
+            //jesli ma dziecko to SPRAWDZ CZY SIE ZMIESCI NA LODKE
+            //jesli sie miesci na lodke to: {0, -2, 0}
+            //jesli sie nie zmiesci to wyslij do kolejki child queue i kontynuuj
+            
+            decNo = 1;
+            if(pass.child_age != -1){
+                if(num + num2 > K+1){
+                    printf("Mozemy wpuscic rodzica z dzieckiem!\n");
+                    decNo = 2;
+                }
+                else {
+                    printf("Brak miejsca, zapraszam do osobnej kolejki!\n");
+                    if (msgsnd(child_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
+                        perror("Failed to get passenger with child on child_queue");
+                        exit(EXIT_FAILURE);
+                    }
+                    continue;
+                }
+            }
+
+            struct sembuf opening0 = {0, -decNo, 0};
+            if (semop(barriers, &opening0, 1) == -1) {
+                perror("Cannot get to the brigde 2! \n");
                 exit(EXIT_FAILURE);
             }
 
@@ -240,15 +283,15 @@ void captain_process() {
             } else
                 printf("\n\nPassenger %d got on brigde %d safely %d places left\n\n",pass.pid_p, nr, num + num2 - K);
 
+            struct sembuf closing0 = {0, decNo, 0};
 
-
-            struct sembuf closing0 = {0, 1, 0};
-            if (semop(barriers, & closing0, 1) == -1) {
+            if (semop(barriers, &closing0, 1) == -1) {
                 perror("Cannot get off brigde! \n");
                 exit(EXIT_FAILURE);
             }
+            
+            struct sembuf opening1 =  {1, -decNo, 0};
 
-            struct sembuf opening1 = {1, -1, 0};
             if (semop(barriers, & opening1, 1) == -1) {
                 perror("Cannot get to the boat! \n");
                 exit(EXIT_FAILURE);
@@ -275,7 +318,7 @@ void captain_process() {
 
         while (1) { //rozladunek odbedzie sie niewazne co wiec 1 a nie sail
             
-
+            
             int num = semctl(barriers, 0, GETVAL);
             if (num == -1) {
                 perror("Semaphore read error");
@@ -291,16 +334,24 @@ void captain_process() {
                 printf("Each passenger left the boat and the brigde %d\n", nr);
                 break;
             } //as long as there are still some passengers...
-            struct sembuf leaving1 = {1, 1, 0};
-            if (semop(barriers, &leaving1, 1) == -1) {
-                perror("Cannot get to the brigde! \n");
-                exit(EXIT_FAILURE);
-            }
 
             if (msgrcv(boat_queue, &pass, sizeof(pass) - sizeof(long int), 0, 0) == -1) {
                 perror("Failed to redirect passenger from boat");
                 exit(EXIT_FAILURE);
             }
+
+            if(pass.child_age != -1)
+                decNo = 2;
+            else
+                decNo = 1;
+
+            struct sembuf leaving1 = {1, decNo, 0};
+
+            if (semop(barriers, &leaving1, 1) == -1) {
+                perror("Cannot get to the brigde! \n");
+                exit(EXIT_FAILURE);
+            }
+
 
             if (msgsnd(bridge_msgid, &pass, sizeof(pass) - sizeof(long int), 0) == -1) {
                 perror("Failed to get passenger on the brigde");
@@ -316,14 +367,14 @@ void captain_process() {
             printf("\n\nPassenger got off the brigde %d safely %d have to get out\n\n", nr, (N+K) - (num + num2));
             sleep(1);
 
-            struct sembuf entering0 = {0, -1, 0};
+            struct sembuf entering0 = {0, -decNo, 0};
             if (semop(barriers, & entering0, 1) == -1) {
                 perror("Cannot get on the barrier! \n");
                 exit(EXIT_FAILURE);
             }
 
+            struct sembuf leaving0 = {0, decNo, 0};
 
-            struct sembuf leaving0 = {0, 1, 0};
             if (semop(barriers, & leaving0, 1) == -1) {
                 perror("Cannot get on land\n");
                 exit(EXIT_FAILURE);
@@ -356,6 +407,7 @@ void captain_process() {
     msgctl(bridge_msgid, IPC_RMID, NULL);
     msgctl(returning_msgid, IPC_RMID, NULL);
     msgctl(boat_queue, IPC_RMID, NULL);
+    msgctl(child_msgid, IPC_RMID, NULL);
 
     exit(1);
 }

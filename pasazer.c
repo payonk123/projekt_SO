@@ -21,12 +21,14 @@ struct passenger {
     pid_t pid_p;    // Process ID of the passenger
     int age;        // Age of the passenger
     bool discount50;   // czy uprawniony do znizki - gdy jechal tak gdy pierwszy raz to nir
+    int child_age;
 };
 
 // Define the ticket structure
 struct ticket {
     long int mtype; // Message type
     int assigned_boat; // Assigned boat number (1 or 2)
+    int price; //if pass.another = 0 20 if pass.another = 1 10
 };
 
 struct parent_of_all{
@@ -59,8 +61,18 @@ void passenger_process() {
     // Reseed the random number generator in the child process to ensure unique seeds
     srand(time(NULL)+getpid()); // Unique seed combining time and PID for randomness
 
+    int child_rand = rand()%3;
+    if(child_rand == 0) {
+        pass.child_age = rand()%14+1;
+        pass.age = rand()%63+18;
+    }
+    else{
+        pass.child_age = -1;
+        pass.age = rand() % 66 + 15;
+    }
+    
     // Generate a random age for the passenger
-    int age = rand() % 66 + 15; // Generate random age (15 to 80)
+     // Generate random age (15 to 80)
 
     // Get message queue ID for passenger
     passenger_msgid = msgget(PASSENGER_QUEUE_KEY, 0666);
@@ -114,7 +126,6 @@ void passenger_process() {
     //pass.mtype = 1; // Arbitrary type for passenger messages
     pass.pid_p = getpid();
     pass.mtype = pass.pid_p;
-    pass.age = age;
     pass.discount50 = 0;
     int go = 0;
 
@@ -131,7 +142,7 @@ void passenger_process() {
         exit(EXIT_FAILURE);
     }
 
-    printf("Passenger (PID: %d, Age: %d) assigned to boat %d.\n", pass.pid_p, age, ticket.assigned_boat);
+    printf("Passenger (PID: %d, Age: %d) assigned to boat %d.\n", pass.pid_p, pass.age, ticket.assigned_boat);
 
 
     if(ticket.assigned_boat==1 && pass.discount50 == 0){

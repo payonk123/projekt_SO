@@ -18,12 +18,12 @@ void handle_signal(int signal) {
   exit(1);
 }
 
-// Define the passenger structure
 struct passenger {
     long int mtype; // Message type
     pid_t pid_p;    // Process ID of the passenger
     int age;        // Age of the passenger
-    bool discount50; 
+    bool discount50;   // czy uprawniony do znizki - gdy jechal tak gdy pierwszy raz to nir
+    int child_age;
 };
 
 // Define the ticket structure
@@ -42,6 +42,8 @@ struct cashier {
 #define PASSENGER_QUEUE_KEY 1234
 #define CASHIER_QUEUE_KEY 5678
 #define CASHIER_EX_QUEUE_KEY 1919
+
+#define TICKET 20.0
 
 void cashier_process() {
 
@@ -72,18 +74,23 @@ void cashier_process() {
 
         // Assign boat based on age
         ticket.mtype = pass.pid_p; // Send ticket to the specific passenger
-        if (pass.age > 70) {
+        if (pass.age > 70 || pass.child_age != -1) {
             ticket.assigned_boat = 2; // Assign boat 2
         } else {
             ticket.assigned_boat = (rand() % 2) + 1; // Assign random boat (1 or 2)
         }
-        if (pass.discount50 == 0) {
-            pass.discount50 = 1; // next time will be another
-            ticket.price = 20;
-        } else {
-            ticket.price = 10; // 50% discount for passengers sailing on repeat
+        
+        ticket.price = TICKET; 
+
+        if (pass.child_age != -1 && pass.child_age > 2) {
+            ticket.price *= 2;
         }
 
+        if (pass.discount50 == 0) {
+            pass.discount50 = 1; 
+        }
+        else
+            ticket.price /= 2;
 
         // Send ticket to passenger
         if (msgsnd(cashier_msgid, &ticket, sizeof(ticket) - sizeof(long int), 0) == -1) {
@@ -91,7 +98,7 @@ void cashier_process() {
             exit(EXIT_FAILURE);
         }
 
-        printf("Ticket for passenger (PID: %d) sent. Assigned boat: %d.\n", pass.pid_p, ticket.assigned_boat);
+        printf("Ticket for passenger (PID: %d) sent. Assigned boat: %d. Age of passenger's child is: %d\n", pass.pid_p, ticket.assigned_boat, pass.child_age);
     }
 }
 

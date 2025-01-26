@@ -22,7 +22,7 @@
 #define PASS_EX_QUEUE_KEY 1616
 #define CASHIER_EX_QUEUE_KEY 1919
 
-#define Tk 30
+#define Tk 60
 
 struct captain {
     long int mtype;
