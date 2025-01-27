@@ -229,7 +229,7 @@ void spawn_passengers() {
             exit(EXIT_FAILURE);
         }
         //usleep((rand()%10 + 1)*750000); // spawn passengers in random time intervals
-        sleep(5);
+        sleep(20);
     }
 }
 

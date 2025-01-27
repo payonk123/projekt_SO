@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdbool.h>
-
+#include <time.h>
 
 
 #define MOLO_QUEUE_P1_KEY 1111
@@ -25,6 +25,8 @@
 #define T1 5
 #define T2 6
 #define K 2
+#define Tk 60
+
 
 #define BRIDGE_QUEUE_1_KEY 5555
 #define BRIDGE_QUEUE_2_KEY 6666
@@ -81,6 +83,7 @@ void captain_process() {
     int boat_priority_msgid, boat_msgid, bridge_msgid, barriers, returning_msgid, flag, boat_queue, captain_msgid, child_msgid;
     struct passenger pass;
     struct captain captain;
+    int half = Tk/2;
 
     captain.mtype = 1;
     captain.pid_c = getpid();
@@ -177,10 +180,13 @@ void captain_process() {
         exit(EXIT_FAILURE);
     }
     //while dla rejsu
-
+    time_t start_time;
     while (sail) { //pętla rejsu - zaladunek i rozladunek odbywaja sie w petli
         int decNo;
 
+        start_time = time(NULL);
+        //przy kazdym nowym zaladunku sprawdz czas, nadaj mu nowa wartosc
+        
         if (semctl(barriers, 0, SETVAL, K) == -1) { //for now K = 5
             perror("Failed to set first barrier");
             exit(EXIT_FAILURE);
@@ -191,7 +197,6 @@ void captain_process() {
         }
 
         while (sail) { //when no signal from police - else get everyone out and kill them
-
             int num = semctl(barriers, 0, GETVAL);
             if (num == -1) {
                 perror("Semaphore read error");
@@ -227,19 +232,31 @@ void captain_process() {
                     if (msgrcv(boat_msgid, & pass, sizeof(pass) - sizeof(long int), 0, IPC_NOWAIT) == -1) {
                         if (errno == ENOMSG) {
                             //printf("No messages in boat1_priority_msgid.\n");
-                        } else {
+                        } 
+                        else {
                             perror("msgrcv failed");
                             exit(EXIT_FAILURE);
                         }
-                    } else
+                    } 
+                    else
                         passengerSpotted = true;
                 }
-            } else
+            } 
+            else
                 passengerSpotted = true;
 
-            if (!passengerSpotted)
-                continue;
-
+            if (!passengerSpotted){
+                //przy kazdym braku pasazera sprawdz roznice czasow (teraz-poczatek zaladunku)
+                //jesli ten czas to wiecej niz 1/2 Tk i sa jacys pasazerowie to break czyli plyniemy
+                //jesli ten czas to wiecej niz 1/2 Tk i nie ma pasazerow to continue (czekamy na pasazerow)
+                //nie ma pasazerow gdy num2+num == K+N wiec luz
+                if ((difftime(time(NULL), start_time) >= half) && (num + num2 != K+N)) {
+                    printf("So much time has passed I am starting new course.\n");
+                    break;
+                }
+                else
+                    continue;
+            }
             printf("I am c%d and see %d on molo\n", nr, pass.pid_p);
             sleep(1);
             //jesli ma dziecko to SPRAWDZ CZY SIE ZMIESCI NA LODKE
@@ -258,7 +275,18 @@ void captain_process() {
                         perror("Failed to get passenger with child on child_queue");
                         exit(EXIT_FAILURE);
                     }
-                    continue;
+                    else {
+                        //przy kazdym braku pasazera sprawdz roznice czasow (teraz-poczatek zaladunku)
+                        //jesli ten czas to wiecej niz 1/2 Tk i sa jacys pasazerowie to break czyli plyniemy
+                        //jesli ten czas to wiecej niz 1/2 Tk i nie ma pasazerow to continue (czekamy na pasazerow)
+                        //nie ma pasazerow gdy num2+num == K+N wiec luz
+                        if ((difftime(time(NULL), start_time) >= half) && (num + num2 != K+N)) {
+                            printf("So much time has passed I am starting new course.\n");
+                            break;
+                        }
+                        else
+                            continue;
+                    }
                 }
             }
 
@@ -281,7 +309,7 @@ void captain_process() {
                     exit(EXIT_FAILURE);
                 }
             } else
-                printf("\n\nPassenger %d got on brigde %d safely %d places left\n\n",pass.pid_p, nr, num + num2 - K);
+                printf("\n\nPassenger %d got on brigde %d safely %d places left\n\n",pass.pid_p, nr, (num + num2 - K)-1);
 
             struct sembuf closing0 = {0, decNo, 0};
 
@@ -303,7 +331,7 @@ void captain_process() {
 
 
         }
-
+        //you can't get off the boat it is sailing now
         if (semctl(flag, 0, SETVAL, 1) == -1) { 
             perror("Failed to set a flag");
             exit(EXIT_FAILURE);
